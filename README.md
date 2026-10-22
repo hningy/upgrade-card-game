@@ -22,6 +22,92 @@
 - 玩家名称、AI 难度和声音设置保存在浏览器本地
 - 分阶段背景音乐、发牌音效和出牌音效
 
+## 架构设计
+
+当前网页版采用“纯规则核心 + React 视图 + 独立音频控制”的分层结构。界面只负责展示状态和提交动作，不自行判断跟牌或修改分数。
+
+```mermaid
+flowchart TB
+    subgraph UI[React 界面层]
+        APP[App.tsx<br/>阶段调度与交互]
+        TABLE[TableParts<br/>座位、牌权、吃分区]
+        DIALOG[GameDialogs<br/>规则、亮牌、结算]
+        CARD[PlayingCard<br/>牌面显示]
+    end
+
+    subgraph SESSION[GameSession]
+        STATE[MatchState / RoundState]
+        ACTION[执行动作]
+        EVENT[事件与日志]
+    end
+
+    subgraph CORE[纯 TypeScript 规则核心]
+        CARDS[cards.ts<br/>牌组与牌力]
+        RULES[rules.ts<br/>跟牌、甩牌、赢墩]
+        SETTLE[settlement.ts<br/>积分与升级]
+        AI[ai.ts<br/>三档 AI]
+    end
+
+    subgraph AUDIO[声音层]
+        MUSIC[背景音乐]
+        SFX[发牌/出牌音效]
+        VOLUME[音量、静音与自动播放]
+    end
+
+    STORAGE[(localStorage<br/>名称、难度、音量)]
+
+    APP --> TABLE
+    APP --> DIALOG
+    APP --> CARD
+    APP -->|提交合法动作| ACTION
+    ACTION --> STATE
+    ACTION --> EVENT
+    ACTION --> RULES
+    ACTION --> SETTLE
+    CARDS --> RULES
+    CARDS --> AI
+    RULES --> AI
+    AI -->|选择合法动作| ACTION
+    STATE -->|快照| APP
+    APP --> AUDIO
+    VOLUME --> STORAGE
+```
+
+### 一次出牌的数据流
+
+```mermaid
+sequenceDiagram
+    actor P as 玩家
+    participant UI as React 界面
+    participant S as GameSession
+    participant R as 规则引擎
+    participant A as AI
+
+    P->>UI: 选择手牌并点击出牌
+    UI->>S: playHuman(cards)
+    S->>R: 校验回合、花色、数量和甩牌
+    alt 合法
+        R-->>S: 通过
+        S->>S: 更新手牌、牌权和吃分
+        S->>A: AI 回合按时决策
+        A->>R: 生成并校验合法动作
+        S-->>UI: 新状态快照
+        UI-->>P: 更新牌桌、日志和声音
+    else 不合法
+        R-->>S: 错误原因
+        S-->>UI: 保留当前牌局并显示提示
+    end
+```
+
+架构约束：
+
+- `GameSession` 是唯一牌局状态来源。
+- 所有跟牌、甩牌、吃分和升级判断都经过规则引擎。
+- 随机数使用可复现种子，便于测试牌局。
+- AI 只读取自己的手牌与公开信息。
+- 计时器、音量和本地设置属于平台适配层，不写入规则核心。
+- 规则核心不依赖 React 或 DOM，可迁移到微信小程序或联机服务端。
+
 ## 快速开始
 
 需要 Node.js 20 或更高版本。
@@ -224,6 +310,51 @@ AI 可见信息包括自己的手牌、公开出牌、公开弃牌、当前牌�
 - 连续升级和跨 A、经过 2 的循环
 - 简单、一般、高级 AI 自动完成牌局
 - 出牌建议返回合法牌组
+
+## 后续微信联机架构（规划，尚未实现）
+
+联机版不能直接复用当前“浏览器持有完整牌局”的方式。四名玩家应由服务端统一裁判，每名玩家只收到自己的可见状态。
+
+```mermaid
+flowchart LR
+    subgraph CLIENTS[微信小程序客户端]
+        C1[玩家 A]
+        C2[玩家 B]
+        C3[玩家 C]
+        C4[玩家 D]
+    end
+
+    subgraph SERVER[权威游戏服务]
+        ROOM[房间与座位]
+        AUTH[微信身份与操作校验]
+        CORE[共享 game-core]
+        PRIVATE[完整牌局状态]
+        VIEW[按玩家生成可见视图]
+    end
+
+    subgraph VOICE[实时语音]
+        TRTC[TRTC 语音房间]
+    end
+
+    C1 & C2 & C3 & C4 -->|创建/加入/出牌| AUTH
+    AUTH --> ROOM
+    AUTH --> CORE
+    CORE --> PRIVATE
+    PRIVATE --> VIEW
+    VIEW -->|实时状态| C1 & C2 & C3 & C4
+    C1 & C2 & C3 & C4 <--> TRTC
+```
+
+关键点：
+
+- 服务端保存真实手牌、底牌、令花色和洗牌结果。
+- 每名玩家只能收到自己的手牌与公开牌局信息。
+- 客户端提交动作，服务端重新校验，禁止客户端直接修改分数或牌权。
+- 语音使用独立频道，与游戏状态服务分开管理。
+- 掉线重连后重新下发该玩家的私有视图。
+- 所有入口都需要统一的音量和静音控制；默认可先闭麦，再允许全员开麦。
+
+详细迁移计划见 [工程结构](./docs/工程结构.md)。
 
 ## 当前边界
 
