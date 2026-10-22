@@ -5,7 +5,7 @@
 ## 快速开始
 
 ```powershell
-cd E:\code\codex\update
+cd E:\code\codex\upgrade-card-game
 npm install
 npm run dev
 ```
@@ -40,7 +40,7 @@ npm run preview
 ## 目录
 
 ```text
-update/
+upgrade-card-game/
   src/
     app/App.tsx                页面状态与布局
     components/cards/          牌面组件
