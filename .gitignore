@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+__pycache__/
+*.py[cod]
+.vite/
+.env
+.env.*
+*.local
+Thumbs.db
+.DS_Store
+
+# Large source files remain local; public assets are committed.
+assets/audio/source/
+assets/card-art/source/
